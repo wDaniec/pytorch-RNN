@@ -10,8 +10,8 @@ def get_start_embeds(embed, embed_dict, start_state):
 
 
 
-embed = nn.Embedding(12, 3)
-word_to_emb = {i-1: i for i in range(12)}
-start_state = torch.randint(-1, 10, (81,)).tolist()
-
-print(get_start_embeds(embed, word_to_emb, start_state))
+if __name__=='__main__':
+    embed = nn.Embedding(12, 3)
+    word_to_emb = {i-1: i for i in range(12)}
+    start_state = torch.randint(-1, 10, (81,)).tolist()
+    print(get_start_embeds(embed, word_to_emb, start_state))
