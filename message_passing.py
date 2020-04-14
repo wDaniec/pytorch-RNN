@@ -17,19 +17,19 @@ def message_passing(nodes, edges, edges_features, message_fn):
     return updates
 
 
-# 3 nody po 3 embed
-nodes = torch.Tensor([[0.12, 0.41, 2.23], [0.11, 0.22, 0.33], [0.12, 0.33, 0.42]])
-edges = torch.Tensor([[0, 1], [1, 0], [2, 1], [1, 2]]).long()
+if __name__=='__main__':
+    nodes = torch.Tensor([[0.12, 0.41, 2.23], [0.11, 0.22, 0.33], [0.12, 0.33, 0.42]])
+    edges = torch.Tensor([[0, 1], [1, 0], [2, 1], [1, 2]]).long()
 
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.fc1 = nn.Linear(6,3)
-    def forward(self, x):
-        print(x.shape)
-        x = self.fc1(x)
-        return x
-print(message_passing(nodes, edges, None, Net()))
+    class Net(nn.Module):
+        def __init__(self):
+            super(Net, self).__init__()
+            self.fc1 = nn.Linear(6,3)
+        def forward(self, x):
+            print(x.shape)
+            x = self.fc1(x)
+            return x
+    print(message_passing(nodes, edges, None, Net()))
 
 
 
