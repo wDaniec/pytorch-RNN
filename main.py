@@ -9,13 +9,13 @@ import time
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 EMB_SIZE = 12
 HIDDEN_SIZE = 96
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 
 class MyDataset(Dataset):
 
     def __init__(self, csv_file):
         self.csv = np.array(pd.read_csv(csv_file, sep=',', header=None))
-        self.csv = torch.Tensor([[[get_start_embeds(int(x)) for x in my_input] for my_input in problem] for problem in self.csv]).long()
+        self.csv = torch.Tensor([[[int(x) for x in my_input] for my_input in problem] for problem in self.csv]).long()
     def __len__(self):
         return self.csv.shape[0]
 
@@ -93,6 +93,9 @@ def one_hot(num):
 traindataset = MyDataset('train.csv')
 trainloader = DataLoader(traindataset, batch_size = BATCH_SIZE, shuffle = True, num_workers = 4)
 
+testdataset = MyDataset('test.csv')
+testloader = DataLoader(testdataset, batch_size = BATCH_SIZE, shuffle = True, num_workers = 4)
+
 mlp1 = MLP(3*EMB_SIZE).to(device)
 mlp2 = MLP(2*HIDDEN_SIZE).to(device)
 mlp3 = MLP(2*HIDDEN_SIZE).to(device)
@@ -113,7 +116,43 @@ criterion = nn.CrossEntropyLoss()
 edges = get_edges()
 
 start_time = time.time()
+
+def check_val():
+    with torch.no_grad():
+        almost_correct = 0
+        correct = 0
+        total = 0
+        for batch_id, start_state_batched in enumerate(testloader):
+
+            Y = start_state_batched[:, 1, :].to(device)
+            X = start_state_batched[:, 0, :].to(device)
+
+            X = get_start_embeds_batched(embed, X)
+            X = mlp1(X)
+            H = X.detach().clone().to(device)
+
+            for i in range(32):
+                H = message_passing_batched(H, edges, mlp2) # message_fn
+                H = mlp3(torch.cat([H, X], dim=2))
+                H, S = lstm(H)
+                res = r(H)
+                
+            pred = res
+            pred = torch.argmax(pred, dim=2)
+
+            if batch_id % 100 == 0:
+                print("validation: ", batch_id, '/', len(testloader))
+
+            correct += torch.sum(torch.sum(pred == Y, dim=1) == 81)
+            almost_correct += torch.sum(torch.sum(pred == Y, dim=1) >= 60)
+            total += Y.shape[0]
+            
+        print("Correctly solved: {}, out of: {}".format(correct, total))
+        print("Almost correctly solved: {}, out of: {}".format(almost_correct, total))
+
+
 for epoch in range(1000):
+    check_val()
     for batch_id, start_state_batched in enumerate(trainloader):
         Y = start_state_batched[:, 1, :].to(device)
         X = start_state_batched[:, 0, :].to(device)
@@ -141,11 +180,11 @@ for epoch in range(1000):
                 # print("step ", i, ": ",loss)
             # print(loss)
         loss /= Y.shape[0]
-        if(batch_id % 10 == 0):
-            print("10 batches time:", time.time() - start_time)
+        if(batch_id % 100 == 0):
+            print("100 batches time:", time.time() - start_time)
             start_time = time.time()
-        print(batch_id, '/', len(trainloader))
-        print(loss)
+            print(batch_id, '/', len(trainloader))
+            print(loss)
         loss.backward()
         for optimizer in optimizers:
             optimizer.step()
