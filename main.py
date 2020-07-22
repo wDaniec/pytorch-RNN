@@ -5,9 +5,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import time
+import sys
+
+# sys.stdout = open('lologi.txt', 'w')
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-EMB_SIZE = 12
+EMB_SIZE = 16
 HIDDEN_SIZE = 96
 BATCH_SIZE = 32
 
@@ -22,7 +25,7 @@ class MyDataset(Dataset):
     def __getitem__(self, idx):
         # res = torch.Tensor([[int(x) for x in sudoku] for sudoku in self.csv[idx]]).long()
         # return res
-        return self.csv[idx]
+        return self.csv[idx][0], self.csv[idx][1]
 
 def get_edges():
     def cross(a):
@@ -36,18 +39,16 @@ def get_edges():
     for i in range(3):
         for j in range(3):
             squares += cross(idx[i * 3:(i + 1) * 3, j * 3:(j + 1) * 3])
-    return torch.Tensor(list(set(rows + columns + squares))).long()
+    
+    edges_base = list(set(rows + columns + squares))
+    batched_edges = [(i + (b * 81), j + (b * 81)) for b in range(BATCH_SIZE) for i, j in edges_base]
+    return torch.Tensor(batched_edges).long()
 
-def get_start_embeds(embed, start_state):
-    start_state = torch.Tensor([x.item() for x in start_state]).long().to(device)
-    rows = torch.Tensor([i // 9 for i in range(81)]).long().to(device)
-    columns = torch.Tensor([i % 9 for i in range(81)]).long().to(device)
-    X = torch.cat([embed(start_state, EMB_SIZE), embed(rows, EMB_SIZE), embed(columns, EMB_SIZE)], dim=1).float().to(device)
+def get_start_embeds(embed, X, rows, columns):
+    X = torch.cat([embed(X, EMB_SIZE), rows, columns], dim=1).float()
      
     return X
-    
-def get_start_embeds_batched(embed, start_state_batched):
-    return torch.stack([get_start_embeds(embed, start_state) for start_state in start_state_batched])
+
 
 def message_passing(nodes, edges, message_fn):
     n_nodes = nodes.shape[0]
@@ -62,9 +63,6 @@ def message_passing(nodes, edges, message_fn):
     idx_j = edges[:, 1].to(device)
     updates = updates.index_add(0, idx_j, messages)
     return updates
-
-def message_passing_batched(nodes_batched, edges, message_fn):
-    return torch.stack([message_passing(nodes, edges, message_fn) for nodes in nodes_batched])
 
 class MLP(nn.Module):
     def __init__(self, input_size):
@@ -102,7 +100,8 @@ mlp3 = MLP(2*HIDDEN_SIZE).to(device)
 r = Pred(HIDDEN_SIZE).to(device)
 lstm = nn.LSTM(HIDDEN_SIZE, HIDDEN_SIZE, batch_first=True).to(device)
 embed = torch.nn.functional.one_hot
-
+rows = embed(torch.Tensor([i // 9 for i in range(81)]).long(), EMB_SIZE).repeat(BATCH_SIZE, 1)
+columns = embed(torch.Tensor([i % 9 for i in range(81)]).long(), EMB_SIZE).repeat(BATCH_SIZE, 1)
 
 optimizer_mlp1 = torch.optim.Adam(mlp1.parameters(), lr=2e-4, weight_decay=1e-4)
 optimizer_mlp2 = torch.optim.Adam(mlp2.parameters(), lr=2e-4, weight_decay=1e-4)
@@ -114,6 +113,7 @@ optimizers = [optimizer_mlp1, optimizer_mlp2, optimizer_mlp3, optimizer_r, optim
 criterion = nn.CrossEntropyLoss()
 
 edges = get_edges()
+print(edges.shape)
 
 start_time = time.time()
 
@@ -122,17 +122,18 @@ def check_val():
         almost_correct = 0
         correct = 0
         total = 0
-        for batch_id, start_state_batched in enumerate(testloader):
-
-            Y = start_state_batched[:, 1, :].to(device)
-            X = start_state_batched[:, 0, :].to(device)
-
-            X = get_start_embeds_batched(embed, X)
+        my_dict = [0 for i in range(82)]
+        for batch_id, (X, Y) in enumerate(testloader):
+            X = X.flatten()
+            Y = Y.flatten()
+            print(X.shape, Y.shape)
+            given = torch.sum(X != 0, dim=1)
+            X = get_start_embeds_batched(embed, X, rows, columns)
             X = mlp1(X)
             H = X.detach().clone().to(device)
 
             for i in range(32):
-                H = message_passing_batched(H, edges, mlp2) # message_fn
+                H = message_passing(H, edges, mlp2) # message_fn
                 H = mlp3(torch.cat([H, X], dim=2))
                 H, S = lstm(H)
                 res = r(H)
@@ -140,24 +141,39 @@ def check_val():
             pred = res
             pred = torch.argmax(pred, dim=2)
 
+            amam = torch.sum(pred == Y, dim=1)
+            for x in amam:
+                my_dict[x.item()] += 1
+
             if batch_id % 100 == 0:
                 print("validation: ", batch_id, '/', len(testloader))
 
+            # print(torch.sum(X != 0, dim=1))
             correct += torch.sum(torch.sum(pred == Y, dim=1) == 81)
             almost_correct += torch.sum(torch.sum(pred == Y, dim=1) >= 60)
             total += Y.shape[0]
-            
+        
+        for i, x in enumerate(my_dict):
+            print(i, ": ", x)
+        
         print("Correctly solved: {}, out of: {}".format(correct, total))
         print("Almost correctly solved: {}, out of: {}".format(almost_correct, total))
 
 
 for epoch in range(1000):
-    check_val()
-    for batch_id, start_state_batched in enumerate(trainloader):
-        Y = start_state_batched[:, 1, :].to(device)
-        X = start_state_batched[:, 0, :].to(device)
+    running_loss = 0
+    print("Started epoch: ", epoch)
+    for batch_id, (X, Y) in enumerate(trainloader):
+        X = X.flatten()
+        Y = Y.flatten()
+        print(X.shape, Y.shape)
 
-        X = get_start_embeds_batched(embed, X)
+        X = get_start_embeds(embed, X, rows, columns)
+
+        X = X.to(device)
+        Y = Y.to(device)
+
+        print(X)
         X = mlp1(X)
         H = X.detach().clone().to(device)
 
@@ -168,8 +184,10 @@ for epoch in range(1000):
         loss = 0
         S = torch.zeros(1, X.shape[0], HIDDEN_SIZE).to(device)
         for i in range(32):
-            H = message_passing_batched(H, edges, mlp2) # message_fn
-            H = mlp3(torch.cat([H, X], dim=2))
+            H = message_passing(H, edges, mlp2) # message_fn
+            print(H.shape)
+            print(torch.cat([H, X], dim=1).shape)
+            H = mlp3(torch.cat([H, X], dim=1))
             H, S = lstm(H)
             res = r(H)
             
@@ -180,14 +198,17 @@ for epoch in range(1000):
                 # print("step ", i, ": ",loss)
             # print(loss)
         loss /= Y.shape[0]
+        running_loss += loss
         if(batch_id % 100 == 0):
-            print("100 batches time:", time.time() - start_time)
-            start_time = time.time()
-            print(batch_id, '/', len(trainloader))
-            print(loss)
+            # print("100 batches time:", time.time() - start_time)
+            # start_time = time.time()
+            print("trainset: {} / {} | train_loss: {}".format(batch_id, len(trainloader), running_loss.item() / 100))
+            running_loss = 0
+            sys.stdout.flush()
         loss.backward()
         for optimizer in optimizers:
             optimizer.step()
+    check_val()
 
 
 
