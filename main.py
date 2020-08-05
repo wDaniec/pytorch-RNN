@@ -45,9 +45,10 @@ def get_edges():
     return torch.Tensor(batched_edges).long()
 
 def get_start_embeds(embed, X):
-    rows = embed(torch.Tensor([i // 9 for i in range(81)]).long(), EMB_SIZE).repeat(X.shape[0] // 81, 1) # beznadziejne rozwiazanie !!!!
-    columns = embed(torch.Tensor([i % 9 for i in range(81)]).long(), EMB_SIZE).repeat(X.shape[0] // 81, 1) # beznadziejne rozwiazanie, tez !!
-    X = torch.cat([embed(X, EMB_SIZE), rows, columns], dim=1).float()
+    # rows = embed(torch.Tensor([i // 9 for i in range(81)]).long(), EMB_SIZE).repeat(X.shape[0] // 81, 1) # beznadziejne rozwiazanie !!!!
+    # columns = embed(torch.Tensor([i % 9 for i in range(81)]).long(), EMB_SIZE).repeat(X.shape[0] // 81, 1) # beznadziejne rozwiazanie, tez !!
+    # X = torch.cat([embed(X, EMB_SIZE), rows, columns], dim=1).float()
+    X = embed(X, EMB_SIZE).float()
      
     return X
 
@@ -96,7 +97,7 @@ trainloader = DataLoader(traindataset, batch_size = BATCH_SIZE, shuffle = True, 
 testdataset = MyDataset('test.csv')
 testloader = DataLoader(testdataset, batch_size = BATCH_SIZE, shuffle = True, num_workers = 4)
 
-mlp1 = MLP(3*EMB_SIZE).to(device)
+mlp1 = MLP(EMB_SIZE).to(device)
 mlp2 = MLP(2*HIDDEN_SIZE).to(device)
 mlp3 = MLP(2*HIDDEN_SIZE).to(device)
 r = Pred(HIDDEN_SIZE).to(device)
