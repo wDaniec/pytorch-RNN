@@ -11,11 +11,15 @@ import random
 
 # sys.stdout = open('lologi.txt', 'w')
 
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cpu")
 EMB_SIZE = 50 # bedzie trzeba to zmienic jezeli bede chcial wejsc w wieksze kakuro
 HIDDEN_SIZE = 96
 BATCH_SIZE = 32
+LEARNING_RATE = 2e-4
+DEBUG = False
+SEND_NEPTUNE = False
+PATH_CHECKPOINT = "./kakuro_{}".format(sys.argv[1])
 
 
 ################################# Tutaj dodaje nowe rzeczy #################################
@@ -106,6 +110,7 @@ def check_val():
         almost_correct = 0
         correct = 0
         total = 0
+        running_loss = 0
         for batch_id, (X, Y, E, L) in enumerate(testloader):
             if(batch_id // len(testloader)):
                 break
@@ -125,6 +130,8 @@ def check_val():
                 H = CellState
                 pred = r(H)
 
+                running_loss += criterion(pred, Y) / BATCH_SIZE
+            
 
             pred = torch.argmax(pred, dim=1)
             amam = (pred == Y)
@@ -140,14 +147,34 @@ def check_val():
             almost_correct += torch.sum(torch.sum(correct_batch > L* 0.8))
             total += BATCH_SIZE
         
+        val_loss = running_loss.item() / len(testloader)
+        val_acc = float(correct) / total
         print("Correctly solved: {}, out of: {}".format(correct, total))
         print("Almost correctly solved: {}, out of: {}".format(almost_correct, total))
 
+        return val_loss, val_acc
 
+
+def save_checkpoint(networks):
+    torch.save({
+        'mlp1': networks[0].state_dict(),
+        'mlp2': networks[1].state_dict(),
+        'mlp3': networks[2].state_dict(),
+        'r': networks[3].state_dict(),
+        'lstm': networks[4].state_dict()
+    }, PATH_CHECKPOINT)
+
+def load_checkpoint(networks):
+    checkpoint = torch.load(PATH_CHECKPOINT)
+    networks[0].state_dict(checkpoint['mlp1'])
+    networks[1].state_dict(checkpoint['mlp2'])
+    networks[2].state_dict(checkpoint['mlp3'])
+    networks[3].state_dict(checkpoint['r'])
+    networks[4].state_dict(checkpoint['lstm'])
 
 if __name__ == '__main__':
-    trainloader = Loader("../Kakurosy/train.txt")
-    testloader = Loader("../Kakurosy/val.txt")
+    trainloader = Loader("../Kakurosy/train_{}.txt".format(sys.argv[1]))
+    testloader = Loader("../Kakurosy/val_{}.txt".format(sys.argv[1]))
 
     mlp1 = MLP(EMB_SIZE).to(device)
     mlp2 = MLP(2*HIDDEN_SIZE).to(device)
@@ -155,12 +182,13 @@ if __name__ == '__main__':
     r = Pred(HIDDEN_SIZE).to(device)
     lstm = nn.LSTMCell(HIDDEN_SIZE, HIDDEN_SIZE).to(device)
     embed = torch.nn.functional.one_hot
+    networks = [mlp1, mlp2, mlp3, r, lstm]
 
-    optimizer_mlp1 = torch.optim.Adam(mlp1.parameters(), lr=2e-4, weight_decay=1e-4)
-    optimizer_mlp2 = torch.optim.Adam(mlp2.parameters(), lr=2e-4, weight_decay=1e-4)
-    optimizer_mlp3 = torch.optim.Adam(mlp3.parameters(), lr=2e-4, weight_decay=1e-4)
-    optimizer_r = torch.optim.Adam(r.parameters(), lr=2e-4, weight_decay=1e-4)
-    optimizer_lstm = torch.optim.Adam(lstm.parameters(), lr=2e-4, weight_decay=1e-4)
+    optimizer_mlp1 = torch.optim.Adam(mlp1.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    optimizer_mlp2 = torch.optim.Adam(mlp2.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    optimizer_mlp3 = torch.optim.Adam(mlp3.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    optimizer_r = torch.optim.Adam(r.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    optimizer_lstm = torch.optim.Adam(lstm.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 
     optimizers = [optimizer_mlp1, optimizer_mlp2, optimizer_mlp3, optimizer_r, optimizer_lstm]
     criterion = nn.CrossEntropyLoss()
@@ -168,9 +196,14 @@ if __name__ == '__main__':
     start_time = time.time()
 
     running_loss = 0
-    for batch_id, (X, Y, E, _) in enumerate(trainloader, 1):
+    best_val = 0
+    epoch = 0
+    correct = 0
+    total = 0
+    print("Training has started")
+    for batch_id, (X, Y, E, L) in enumerate(trainloader, 1):
+        is_new_epoch = batch_id // len(trainloader) > epoch 
         epoch = batch_id  // len(trainloader)
-        is_new_epoch = batch_id // len(trainloader) > (batch_id-1)  // len(trainloader)
         
         X = get_start_embeds(embed, X)
         X = X.to(device)
@@ -195,20 +228,43 @@ if __name__ == '__main__':
             pred = r(H)
             
             loss += criterion(pred, Y)
+
+        pred = torch.argmax(pred, dim=1)
+        amam = (pred == Y)
         
+        current_id = 0
+        correct_batch = torch.zeros((L.shape[0])).long()
+        for idx, l in enumerate(L):
+            guessed_right = torch.sum(amam[current_id:(current_id+l)])
+            correct_batch[idx] = guessed_right
+            current_id += l
+
+        correct += torch.sum(torch.sum(correct_batch == L))
+        total += BATCH_SIZE
+
         loss /= BATCH_SIZE
         running_loss += loss
         const = 100
-        if(batch_id % const == 0):
-            print("trainset: {} / {}".format(batch_id, len(trainloader)), end= " | ")
-            print("{:.6f} updates/s".format( const / (time.time() - start_time)), end=" | ")
-            print("train_loss: {:.6f}".format(100 * running_loss.item() / const)) # multiply the loss by 100 to see it better
-            running_loss = 0
-            sys.stdout.flush()
+        if(batch_id % const == 0 and DEBUG):
+            print("trainset: {} / {}".format(batch_id % len(trainloader), len(trainloader)), end= " | ")
+            print("{:.6f} updates/s".format( const / (time.time() - start_time)))
             start_time = time.time()
+            sys.stdout.flush()
         loss.backward()
         for optimizer in optimizers:
             optimizer.step()
         
-        if is_new_epoch and epoch % 5 == 0:
-            check_val()
+        if is_new_epoch:
+            train_loss = running_loss.item() / len(trainloader) # multiply the loss by 100 to see it better
+            train_acc = correct / total
+            running_loss = 0
+
+            print("epoch: {}".format(epoch-1))
+            val_loss, val_acc = check_val()
+            print("train_loss: {:.6f}".format(train_loss))
+            print("val_loss: {:.6f}".format(val_loss))
+            print("train_acc: {:.4f}".format(train_acc))
+            print("val_acc: {:.4f}".format(val_acc))
+            if val_acc > best_val:
+                best_val = val_acc
+                save_checkpoint(networks)
