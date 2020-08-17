@@ -1,0 +1,9 @@
+- Policzyc accuracy, ale dobrze zgadnietych
+- Sprawdzic dlaczego loss nie jest jakis ogromny jak 64 kroki zamiast 32
+- Sprawdzic embedding wytrenowanej sieci 4x4
+	- znalezc przyklady, ktore siec jest w stanie rozwiazac
+	- wczytac stan wytrenowanej sieci
+	- wypisac prawdopodobienstwa roznych wartosci w roznych krokach
+	- wypisac embeddingi w roznych krokach 
+- Uzyc tej sieci konwolucyjnej zeby rozwiazac kakuro
+- 

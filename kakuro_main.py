@@ -8,19 +8,21 @@ import time
 import sys
 import json
 import random
+import neptune
 
 # sys.stdout = open('lologi.txt', 'w')
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cpu")
-EMB_SIZE = 50 # bedzie trzeba to zmienic jezeli bede chcial wejsc w wieksze kakuro
+CUDA_ID = 0
+EMB_SIZE = 50
 HIDDEN_SIZE = 96
-BATCH_SIZE = 32
-LEARNING_RATE = 2e-4
+BATCH_SIZE = 2
+LEARNING_RATE = 2e-4 
 DEBUG = False
-SEND_NEPTUNE = False
-PATH_CHECKPOINT = "./kakuro_{}".format(sys.argv[1])
+NUM_STEPS = 32
+PATH_CHECKPOINT = "./kakuro_checkpoint_{}_{}".format(sys.argv[1], sys.argv[2])
 
+device = torch.device("cuda:{}".format(CUDA_ID) if torch.cuda.is_available() else "cpu")
+neptune.init('andrzejzdobywca/GNN')
 
 ################################# Tutaj dodaje nowe rzeczy #################################
 
@@ -31,8 +33,10 @@ class Loader():
         self.id = 0
         with open(filename, 'r') as file:
             for line in file:
-                instance = json.loads(line)
-                self.dataset.append(instance)
+                # instance = json.loads(line)
+                self.dataset.append(line)
+        self.dataset = [json.loads(line) for line in set(self.dataset)]
+        print("number of examples: ", len(self.dataset))
     
     def __len__(self):
         return len(self.dataset) // BATCH_SIZE
@@ -123,7 +127,7 @@ def check_val():
 
             CellState = torch.zeros(X.shape).to(device)
             HiddenState = torch.zeros(X.shape).to(device)
-            for i in range(32):
+            for i in range(NUM_STEPS):
                 H = message_passing(H, E, mlp2) # message_fn
                 H = mlp3(torch.cat([H, X], dim=1))
                 HiddenState, CellState = lstm(H, (HiddenState, CellState))
@@ -135,7 +139,6 @@ def check_val():
 
             pred = torch.argmax(pred, dim=1)
             amam = (pred == Y)
-            
             current_id = 0
             correct_batch = torch.zeros((L.shape[0])).long()
             for idx, l in enumerate(L):
@@ -173,98 +176,108 @@ def load_checkpoint(networks):
     networks[4].state_dict(checkpoint['lstm'])
 
 if __name__ == '__main__':
-    trainloader = Loader("../Kakurosy/train_{}.txt".format(sys.argv[1]))
-    testloader = Loader("../Kakurosy/val_{}.txt".format(sys.argv[1]))
+    with neptune.create_experiment(params={'lr': LEARNING_RATE}) as exp:
+        trainloader = Loader("../Kakurosy/train_{}_{}.txt".format(sys.argv[1], sys.argv[2]))
+        testloader = Loader("../Kakurosy/val_{}_{}.txt".format(sys.argv[1], sys.argv[2]))
 
-    mlp1 = MLP(EMB_SIZE).to(device)
-    mlp2 = MLP(2*HIDDEN_SIZE).to(device)
-    mlp3 = MLP(2*HIDDEN_SIZE).to(device)
-    r = Pred(HIDDEN_SIZE).to(device)
-    lstm = nn.LSTMCell(HIDDEN_SIZE, HIDDEN_SIZE).to(device)
-    embed = torch.nn.functional.one_hot
-    networks = [mlp1, mlp2, mlp3, r, lstm]
+        mlp1 = MLP(EMB_SIZE).to(device)
+        mlp2 = MLP(2*HIDDEN_SIZE).to(device)
+        mlp3 = MLP(2*HIDDEN_SIZE).to(device)
+        r = Pred(HIDDEN_SIZE).to(device)
+        lstm = nn.LSTMCell(HIDDEN_SIZE, HIDDEN_SIZE).to(device)
+        embed = torch.nn.functional.one_hot
+        networks = [mlp1, mlp2, mlp3, r, lstm]
 
-    optimizer_mlp1 = torch.optim.Adam(mlp1.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
-    optimizer_mlp2 = torch.optim.Adam(mlp2.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
-    optimizer_mlp3 = torch.optim.Adam(mlp3.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
-    optimizer_r = torch.optim.Adam(r.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
-    optimizer_lstm = torch.optim.Adam(lstm.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+        optimizer_mlp1 = torch.optim.Adam(mlp1.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+        optimizer_mlp2 = torch.optim.Adam(mlp2.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+        optimizer_mlp3 = torch.optim.Adam(mlp3.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+        optimizer_r = torch.optim.Adam(r.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+        optimizer_lstm = torch.optim.Adam(lstm.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
 
-    optimizers = [optimizer_mlp1, optimizer_mlp2, optimizer_mlp3, optimizer_r, optimizer_lstm]
-    criterion = nn.CrossEntropyLoss()
+        optimizers = [optimizer_mlp1, optimizer_mlp2, optimizer_mlp3, optimizer_r, optimizer_lstm]
+        criterion = nn.CrossEntropyLoss()
 
-    start_time = time.time()
+        start_time = time.time()
 
-    running_loss = 0
-    best_val = 0
-    epoch = 0
-    correct = 0
-    total = 0
-    print("Training has started")
-    for batch_id, (X, Y, E, L) in enumerate(trainloader, 1):
-        is_new_epoch = batch_id // len(trainloader) > epoch 
-        epoch = batch_id  // len(trainloader)
-        
-        X = get_start_embeds(embed, X)
-        X = X.to(device)
-        Y = Y.to(device)
-        E = E.to(device)
-
-        X = mlp1(X)
-        H = X.detach().clone().to(device)
-
-
-        for optimizer in optimizers:
-            optimizer.zero_grad()
-        
-        loss = 0
-        CellState = torch.zeros(X.shape).to(device)
-        HiddenState = torch.zeros(X.shape).to(device)
-        for i in range(32):
-            H = message_passing(H, E, mlp2) # message_fn
-            H = mlp3(torch.cat([H, X], dim=1))
-            HiddenState, CellState = lstm(H, (HiddenState, CellState))
-            H = CellState
-            pred = r(H)
+        running_loss = 0
+        best_val = 0
+        epoch = 0
+        correct = 0
+        total = 0
+        print("Training has started")
+        for batch_id, (X, Y, E, L) in enumerate(trainloader, 1):
+            if epoch >= 1000:
+                break
+            is_new_epoch = batch_id // len(trainloader) > epoch 
+            epoch = batch_id  // len(trainloader)
             
-            loss += criterion(pred, Y)
+            X = get_start_embeds(embed, X)
+            X = X.to(device)
+            Y = Y.to(device)
+            E = E.to(device)
 
-        pred = torch.argmax(pred, dim=1)
-        amam = (pred == Y)
-        
-        current_id = 0
-        correct_batch = torch.zeros((L.shape[0])).long()
-        for idx, l in enumerate(L):
-            guessed_right = torch.sum(amam[current_id:(current_id+l)])
-            correct_batch[idx] = guessed_right
-            current_id += l
+            X = mlp1(X)
+            H = X.detach().clone().to(device)
 
-        correct += torch.sum(torch.sum(correct_batch == L))
-        total += BATCH_SIZE
 
-        loss /= BATCH_SIZE
-        running_loss += loss
-        const = 100
-        if(batch_id % const == 0 and DEBUG):
-            print("trainset: {} / {}".format(batch_id % len(trainloader), len(trainloader)), end= " | ")
-            print("{:.6f} updates/s".format( const / (time.time() - start_time)))
-            start_time = time.time()
-            sys.stdout.flush()
-        loss.backward()
-        for optimizer in optimizers:
-            optimizer.step()
-        
-        if is_new_epoch:
-            train_loss = running_loss.item() / len(trainloader) # multiply the loss by 100 to see it better
-            train_acc = correct / total
-            running_loss = 0
+            for optimizer in optimizers:
+                optimizer.zero_grad()
+            
+            loss = 0
+            CellState = torch.zeros(X.shape).to(device)
+            HiddenState = torch.zeros(X.shape).to(device)
+            for i in range(NUM_STEPS):
+                H = message_passing(H, E, mlp2) # message_fn
+                H = mlp3(torch.cat([H, X], dim=1))
+                HiddenState, CellState = lstm(H, (HiddenState, CellState))
+                H = CellState
+                pred = r(H)
+                
+                loss += criterion(pred, Y)
+            pred = torch.argmax(pred, dim=1)
+            amam = (pred == Y)
+            print(amam)
+            current_id = 0
+            correct_batch = torch.zeros((L.shape[0])).long()
+            for idx, l in enumerate(L):
+                guessed_right = torch.sum(amam[current_id:(current_id+l)])
+                correct_batch[idx] = guessed_right
+                current_id += l
 
-            print("epoch: {}".format(epoch-1))
-            val_loss, val_acc = check_val()
-            print("train_loss: {:.6f}".format(train_loss))
-            print("val_loss: {:.6f}".format(val_loss))
-            print("train_acc: {:.4f}".format(train_acc))
-            print("val_acc: {:.4f}".format(val_acc))
-            if val_acc > best_val:
-                best_val = val_acc
-                save_checkpoint(networks)
+            correct += torch.sum(torch.sum(correct_batch == L))
+            total += BATCH_SIZE
+            loss /= BATCH_SIZE
+            running_loss += loss
+            const = 100
+            if(batch_id % const == 0 and DEBUG):
+                print("trainset: {} / {}".format(batch_id % len(trainloader), len(trainloader)), end= " | ")
+                print("{:.6f} updates/s".format( const / (time.time() - start_time)))
+                start_time = time.time()
+                sys.stdout.flush()
+            loss.backward()
+            for optimizer in optimizers:
+                optimizer.step()
+            
+            if is_new_epoch:
+                train_loss = running_loss.item() / len(trainloader) # multiply the loss by 100 to see it better
+                train_acc = float(correct) / total
+
+                print("epoch: {}".format(epoch-1))
+                print("correct: ", correct, " | total: ", total)
+                val_loss, val_acc = check_val()
+                print("train_loss: {:.6f}".format(train_loss))
+                print("val_loss: {:.6f}".format(val_loss))
+                print("train_acc: {:.4f}".format(train_acc))
+                print("val_acc: {:.4f}".format(val_acc))
+                neptune.send_metric('train_loss', train_loss)
+                neptune.send_metric('val_loss', val_loss)
+                neptune.send_metric('train_acc', train_acc)
+                neptune.send_metric('val_acc', val_acc)
+                if val_acc > best_val:
+                    best_val = val_acc
+                    save_checkpoint(networks)
+                
+                ## reset running variables
+                running_loss = 0
+                correct = 0
+                total = 0
