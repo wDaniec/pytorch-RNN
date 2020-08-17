@@ -1,4 +1,4 @@
-- Policzyc accuracy, ale dobrze zgadnietych
+- Policzyc accuracy, ale dobrze zgadnietych pól, a nie całych problemów
 - Sprawdzic dlaczego loss nie jest jakis ogromny jak 64 kroki zamiast 32
 - Sprawdzic embedding wytrenowanej sieci 4x4
 	- znalezc przyklady, ktore siec jest w stanie rozwiazac

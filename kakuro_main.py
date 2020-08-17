@@ -12,10 +12,10 @@ import neptune
 
 # sys.stdout = open('lologi.txt', 'w')
 # device = torch.device("cpu")
-CUDA_ID = 0
+CUDA_ID = 1
 EMB_SIZE = 50
 HIDDEN_SIZE = 96
-BATCH_SIZE = 2
+BATCH_SIZE = 64
 LEARNING_RATE = 2e-4 
 DEBUG = False
 NUM_STEPS = 32
@@ -113,6 +113,8 @@ def check_val():
     with torch.no_grad():
         almost_correct = 0
         correct = 0
+        correct_cell = 0
+        total_cell = 0
         total = 0
         running_loss = 0
         for batch_id, (X, Y, E, L) in enumerate(testloader):
@@ -133,12 +135,13 @@ def check_val():
                 HiddenState, CellState = lstm(H, (HiddenState, CellState))
                 H = CellState
                 pred = r(H)
-
-                running_loss += criterion(pred, Y) / BATCH_SIZE
+                running_loss += criterion(pred, Y)
             
 
             pred = torch.argmax(pred, dim=1)
             amam = (pred == Y)
+            correct_cell += torch.sum(amam)
+            total_cell += len(amam)
             current_id = 0
             correct_batch = torch.zeros((L.shape[0])).long()
             for idx, l in enumerate(L):
@@ -152,10 +155,11 @@ def check_val():
         
         val_loss = running_loss.item() / len(testloader)
         val_acc = float(correct) / total
+        val_acc_cell = float(correct_cell) / total_cell
         print("Correctly solved: {}, out of: {}".format(correct, total))
         print("Almost correctly solved: {}, out of: {}".format(almost_correct, total))
 
-        return val_loss, val_acc
+        return val_loss, val_acc, val_acc_cell
 
 
 def save_checkpoint(networks):
@@ -176,7 +180,7 @@ def load_checkpoint(networks):
     networks[4].state_dict(checkpoint['lstm'])
 
 if __name__ == '__main__':
-    with neptune.create_experiment(params={'lr': LEARNING_RATE}) as exp:
+    with neptune.create_experiment(params={'lr': LEARNING_RATE}, tags=['debug']) as exp:
         trainloader = Loader("../Kakurosy/train_{}_{}.txt".format(sys.argv[1], sys.argv[2]))
         testloader = Loader("../Kakurosy/val_{}_{}.txt".format(sys.argv[1], sys.argv[2]))
 
@@ -203,7 +207,9 @@ if __name__ == '__main__':
         best_val = 0
         epoch = 0
         correct = 0
+        correct_cell = 0
         total = 0
+        total_cell = 0
         print("Training has started")
         for batch_id, (X, Y, E, L) in enumerate(trainloader, 1):
             if epoch >= 1000:
@@ -236,7 +242,8 @@ if __name__ == '__main__':
                 loss += criterion(pred, Y)
             pred = torch.argmax(pred, dim=1)
             amam = (pred == Y)
-            print(amam)
+            correct_cell += torch.sum(amam)
+            total_cell += len(amam)
             current_id = 0
             correct_batch = torch.zeros((L.shape[0])).long()
             for idx, l in enumerate(L):
@@ -246,7 +253,6 @@ if __name__ == '__main__':
 
             correct += torch.sum(torch.sum(correct_batch == L))
             total += BATCH_SIZE
-            loss /= BATCH_SIZE
             running_loss += loss
             const = 100
             if(batch_id % const == 0 and DEBUG):
@@ -261,18 +267,23 @@ if __name__ == '__main__':
             if is_new_epoch:
                 train_loss = running_loss.item() / len(trainloader) # multiply the loss by 100 to see it better
                 train_acc = float(correct) / total
+                train_acc_cell = float(correct_cell) / total_cell
 
                 print("epoch: {}".format(epoch-1))
                 print("correct: ", correct, " | total: ", total)
-                val_loss, val_acc = check_val()
+                val_loss, val_acc, val_acc_cell = check_val()
                 print("train_loss: {:.6f}".format(train_loss))
-                print("val_loss: {:.6f}".format(val_loss))
                 print("train_acc: {:.4f}".format(train_acc))
+                print("train_acc_cell: {:.4f}".format(train_acc_cell))
+                print("val_loss: {:.6f}".format(val_loss))
                 print("val_acc: {:.4f}".format(val_acc))
+                print("val_acc_cell: {:.4f}".format(val_acc_cell))
                 neptune.send_metric('train_loss', train_loss)
-                neptune.send_metric('val_loss', val_loss)
                 neptune.send_metric('train_acc', train_acc)
+                neptune.send_metric('train_acc_cell', train_acc_cell)
+                neptune.send_metric('val_loss', val_loss)
                 neptune.send_metric('val_acc', val_acc)
+                neptune.send_metric('val_acc_cell', val_acc_cell)
                 if val_acc > best_val:
                     best_val = val_acc
                     save_checkpoint(networks)
@@ -280,4 +291,6 @@ if __name__ == '__main__':
                 ## reset running variables
                 running_loss = 0
                 correct = 0
+                correct_cell = 0
                 total = 0
+                total_cell = 0
