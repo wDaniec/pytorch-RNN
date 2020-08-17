@@ -1,9 +1,8 @@
-- Policzyc accuracy, ale dobrze zgadnietych pól, a nie całych problemów
-- Sprawdzic dlaczego loss nie jest jakis ogromny jak 64 kroki zamiast 32
 - Sprawdzic embedding wytrenowanej sieci 4x4
 	- znalezc przyklady, ktore siec jest w stanie rozwiazac
 	- wczytac stan wytrenowanej sieci
 	- wypisac prawdopodobienstwa roznych wartosci w roznych krokach
 	- wypisac embeddingi w roznych krokach 
 - Uzyc tej sieci konwolucyjnej zeby rozwiazac kakuro
-- 
+- Zmodyfikować crawlera tak, zeby mogl pobierac problemy rozmiaru 9x17
+- Wrzucić datasety na google drive' a. 

@@ -173,11 +173,11 @@ def save_checkpoint(networks):
 
 def load_checkpoint(networks):
     checkpoint = torch.load(PATH_CHECKPOINT)
-    networks[0].state_dict(checkpoint['mlp1'])
-    networks[1].state_dict(checkpoint['mlp2'])
-    networks[2].state_dict(checkpoint['mlp3'])
-    networks[3].state_dict(checkpoint['r'])
-    networks[4].state_dict(checkpoint['lstm'])
+    networks[0].load_state_dict(checkpoint['mlp1'])
+    networks[1].load_state_dict(checkpoint['mlp2'])
+    networks[2].load_state_dict(checkpoint['mlp3'])
+    networks[3].load_state_dict(checkpoint['r'])
+    networks[4].load_state_dict(checkpoint['lstm'])
 
 if __name__ == '__main__':
     with neptune.create_experiment(params={'lr': LEARNING_RATE}, tags=['debug']) as exp:
