@@ -23,6 +23,7 @@ PATH_CHECKPOINT = "./kakuro_checkpoint_{}_{}".format(sys.argv[1], sys.argv[2])
 
 device = torch.device("cuda:{}".format(CUDA_ID) if torch.cuda.is_available() else "cpu")
 neptune.init('andrzejzdobywca/GNN')
+random.seed(3)
 
 ################################# Tutaj dodaje nowe rzeczy #################################
 
@@ -36,6 +37,7 @@ class Loader():
                 # instance = json.loads(line)
                 self.dataset.append(line)
         self.dataset = [json.loads(line) for line in set(self.dataset)]
+        random.shuffle(self.dataset)
         print("number of examples: ", len(self.dataset))
     
     def __len__(self):
