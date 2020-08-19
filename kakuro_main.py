@@ -12,14 +12,13 @@ import neptune
 
 # sys.stdout = open('lologi.txt', 'w')
 # device = torch.device("cpu")
-CUDA_ID = 1
+CUDA_ID = 0
 EMB_SIZE = 50
 HIDDEN_SIZE = 96
 BATCH_SIZE = 64
-LEARNING_RATE = 2e-4 
+LEARNING_RATE = 2e-4
 DEBUG = False
-NUM_STEPS = 32
-PATH_CHECKPOINT = "./kakuro_checkpoint_{}_{}".format(sys.argv[1], sys.argv[2])
+NUM_STEPS = 64
 
 device = torch.device("cuda:{}".format(CUDA_ID) if torch.cuda.is_available() else "cpu")
 neptune.init('andrzejzdobywca/GNN')
@@ -164,17 +163,17 @@ def check_val():
         return val_loss, val_acc, val_acc_cell
 
 
-def save_checkpoint(networks):
+def save_checkpoint(networks, pathcheckpoint):
     torch.save({
         'mlp1': networks[0].state_dict(),
         'mlp2': networks[1].state_dict(),
         'mlp3': networks[2].state_dict(),
         'r': networks[3].state_dict(),
         'lstm': networks[4].state_dict()
-    }, PATH_CHECKPOINT)
+    }, pathcheckpoint)
 
-def load_checkpoint(networks):
-    checkpoint = torch.load(PATH_CHECKPOINT)
+def load_checkpoint(networks, pathcheckpoint):
+    checkpoint = torch.load(patchckeckpoint)
     networks[0].load_state_dict(checkpoint['mlp1'])
     networks[1].load_state_dict(checkpoint['mlp2'])
     networks[2].load_state_dict(checkpoint['mlp3'])
@@ -182,7 +181,9 @@ def load_checkpoint(networks):
     networks[4].load_state_dict(checkpoint['lstm'])
 
 if __name__ == '__main__':
-    with neptune.create_experiment(params={'lr': LEARNING_RATE}, tags=['debug']) as exp:
+    with neptune.create_experiment(params={'lr': LEARNING_RATE}) as exp:
+        path_checkpoint = "./checkpoints/{}".format(exp.id)
+        
         trainloader = Loader("../Kakurosy/train_{}_{}.txt".format(sys.argv[1], sys.argv[2]))
         testloader = Loader("../Kakurosy/val_{}_{}.txt".format(sys.argv[1], sys.argv[2]))
 
@@ -193,7 +194,7 @@ if __name__ == '__main__':
         lstm = nn.LSTMCell(HIDDEN_SIZE, HIDDEN_SIZE).to(device)
         embed = torch.nn.functional.one_hot
         networks = [mlp1, mlp2, mlp3, r, lstm]
-
+        save_checkpoint(networks, path_checkpoint)
         optimizer_mlp1 = torch.optim.Adam(mlp1.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
         optimizer_mlp2 = torch.optim.Adam(mlp2.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
         optimizer_mlp3 = torch.optim.Adam(mlp3.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
@@ -288,7 +289,7 @@ if __name__ == '__main__':
                 neptune.send_metric('val_acc_cell', val_acc_cell)
                 if val_acc > best_val:
                     best_val = val_acc
-                    save_checkpoint(networks)
+                    save_checkpoint(networks, path_checkpoint)
                 
                 ## reset running variables
                 running_loss = 0
