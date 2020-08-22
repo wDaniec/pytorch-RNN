@@ -16,7 +16,7 @@ CUDA_ID = 0
 EMB_SIZE = 50
 HIDDEN_SIZE = 96
 BATCH_SIZE = 64
-LEARNING_RATE = 2e-4
+LEARNING_RATE = 2e-4 * 2
 DEBUG = False
 NUM_STEPS = 64
 
@@ -184,8 +184,8 @@ if __name__ == '__main__':
     with neptune.create_experiment(params={'lr': LEARNING_RATE}) as exp:
         path_checkpoint = "./checkpoints/{}".format(exp.id)
         
-        trainloader = Loader("../Kakurosy/train_{}_{}.txt".format(sys.argv[1], sys.argv[2]))
-        testloader = Loader("../Kakurosy/val_{}_{}.txt".format(sys.argv[1], sys.argv[2]))
+        trainloader = Loader("../Kakurosy/datasets/train_{}_{}.txt".format(sys.argv[1], sys.argv[2]))
+        testloader = Loader("../Kakurosy/datasets/val_{}_{}.txt".format(sys.argv[1], sys.argv[2]))
 
         mlp1 = MLP(EMB_SIZE).to(device)
         mlp2 = MLP(2*HIDDEN_SIZE).to(device)

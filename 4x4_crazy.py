@@ -11,15 +11,15 @@ import random
 
 # sys.stdout = open('lologi.txt', 'w')
 # device = torch.device("cpu")
-CUDA_ID = 1
+CUDA_ID = 0
 EMB_SIZE = 50
 HIDDEN_SIZE = 96
 BATCH_SIZE = 1
 LEARNING_RATE = 2e-4 
 DEBUG = False
 NUM_STEPS = 32
-PATH_CHECKPOINT = "./kakuro_checkpoint_4x4"
-TEST_PATH = "../Kakurosy/ready_datasets/4x4_expert_small.txt"
+PATH_CHECKPOINT = "./checkpoints/GNN-82"
+TEST_PATH = "../Kakurosy/datasets/val_8x8_{}.txt".format(sys.argv[1])
 device = torch.device("cuda:{}".format(CUDA_ID) if torch.cuda.is_available() else "cpu")
 
 ################################# Tutaj dodaje nowe rzeczy #################################
@@ -183,7 +183,7 @@ if __name__ == '__main__':
     test_acc = float(correct) / total
     test_acc_cell = float(correct_cell) / total_cell
 
-    print("correct: ", correct, " | total: ", total)
+    print("correct: ", correct.item(), " | total: ", total)
 
     print("accuracy: {:.4f}".format(test_acc))
     print("cell accuracy: {:.4f}".format(test_acc_cell))

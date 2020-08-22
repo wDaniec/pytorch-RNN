@@ -3,6 +3,58 @@
 	- wczytac stan wytrenowanej sieci
 	- wypisac prawdopodobienstwa roznych wartosci w roznych krokach
 	- wypisac embeddingi w roznych krokach 
+	- wykres cross entropy lossu wzgledem roznicy embeddingow miedzy krokami
 - Uzyc tej sieci konwolucyjnej zeby rozwiazac kakuro
-- Zmodyfikować crawlera tak, zeby mogl pobierac problemy rozmiaru 9x17
-- Wrzucić datasety na google drive' a. 
+
+
+LATEX:
+- Zrobić grafiki do pseudo algorytmów
+- Przypisać bibliografię
+- Zrobić stronę tytułową
+- Usunąć header
+- Ogarnąć footer
+
+
+Kodzenie:
+- Przygotować datasety do eksperymentów
+- Wysłać na google drive' a datasety 8x8
+
+
+Datasety:
+- 8x8:
+	- easy - 40000 DONE
+	- intermediate - 40000 DONE
+	- hard - 40000 DONE
+	- challenging - 40000 DONE
+	- expert - 40000 DONE
+- 4x4:
+	- easy - 200 DONE
+	- intermediate - 200 DONE
+	- hard - 200 DONE
+	- challenging - 200 DONE
+	- expert - 200 DONE
+- 9x17:
+	- easy - 70 DONE
+	- intermediate - 1000 IN-PROCESS
+	- hard - 1000 IN-PROCESS
+	- challenging - 1000
+	- expert - 1000
+
+
+Treningi:
+- sudoku
+	- num_steps 32 DONE 91.6% accuracy - sprawdzi na jakim datasecie
+
+- trening 4x4 mixed:
+	- num_steps 32
+	- num_steps 64 DONE
+
+- trening 8x8 easy 
+	- num_steps 32 DONE
+
+- trening 8x8 mixed
+	- num_steps 32 IN-PROCESS
+
+- trening 8x8 challenging
+	- num_steps 32 DONE
+	- num_steps 64 DONE
