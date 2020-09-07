@@ -5,4 +5,4 @@ To create datasets I used an existing repository: https://github.com/Aditya239/K
 
 The modifiction is avaiable: https://github.com/wDaniec/Kakurosy
 
-Every change I made can be seen in the last commit.
+Every change I made can be seen in the last commit. Function solve() in file testuje.py was written by Aditya239. The function was modified so that LPSolver can solve instances which are of size greater than 9x9.
